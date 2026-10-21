@@ -644,10 +644,6 @@ export async function fetchLiveOrders(restaurantId = activeRestaurantId) {
   }
 }
 
-// Staff authorization fallback for KOT operational cancellation on remote servers
-const KOT_STAFF_AUTH_FALLBACK =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMSIsInJvbGUiOiJTVVBFUl9BRE1JTiIsImFjY291bnRfdHlwZSI6IlNUQUZGIiwic3ViIjoiMSIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDc5NTE1NjZ9.EgEywjJ-wxhvYvXH-29z9skqMOSgbx_-a5VEqgzCOW0';
-
 /**
  * Cancel an entire order / KOT submission.
  * Notifies the kitchen KDS that the order is CANCELLED and recalculates bills.
@@ -661,38 +657,14 @@ const KOT_STAFF_AUTH_FALLBACK =
 export async function cancelOrder({ orderId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
   try {
     const cleanId = String(orderId).replace(/\D/g, '') || orderId;
-    const tokenToUse = authToken || KOT_STAFF_AUTH_FALLBACK;
-    const url = `${activeBaseUrl}/api/v1/orders/${cleanId}/cancel?restaurant_id=${restaurantId}`;
-
-    let res = await fetchWithTimeout(
-      url,
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/orders/${cleanId}/cancel?restaurant_id=${restaurantId}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenToUse}`,
-        },
         body: JSON.stringify({ reason }),
       },
       6000
     );
-
-    // If server rejects with 401/403 (e.g. older waiter token without STAFF flag on remote), retry with staff fallback
-    if ((res.status === 401 || res.status === 403) && tokenToUse !== KOT_STAFF_AUTH_FALLBACK) {
-      res = await fetchWithTimeout(
-        url,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${KOT_STAFF_AUTH_FALLBACK}`,
-          },
-          body: JSON.stringify({ reason }),
-        },
-        6000
-      );
-    }
-
     const data = await res.json().catch(() => ({}));
     if (res.ok && (data.success || data.status === 'CANCELLED')) {
       return { success: true, message: data.message || 'Order cancelled in kitchen (KOT)' };
@@ -718,38 +690,14 @@ export async function cancelOrder({ orderId, reason = 'Customer changed item', r
 export async function cancelOrderItem({ orderId, itemId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
   try {
     const cleanId = String(orderId).replace(/\D/g, '') || orderId;
-    const tokenToUse = authToken || KOT_STAFF_AUTH_FALLBACK;
-    const url = `${activeBaseUrl}/api/v1/orders/${cleanId}/items/${itemId}/cancel?restaurant_id=${restaurantId}`;
-
-    let res = await fetchWithTimeout(
-      url,
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/orders/${cleanId}/items/${itemId}/cancel?restaurant_id=${restaurantId}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenToUse}`,
-        },
         body: JSON.stringify({ reason }),
       },
       6000
     );
-
-    // If server rejects with 401/403 (e.g. older waiter token without STAFF flag on remote), retry with staff fallback
-    if ((res.status === 401 || res.status === 403) && tokenToUse !== KOT_STAFF_AUTH_FALLBACK) {
-      res = await fetchWithTimeout(
-        url,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${KOT_STAFF_AUTH_FALLBACK}`,
-          },
-          body: JSON.stringify({ reason }),
-        },
-        6000
-      );
-    }
-
     const data = await res.json().catch(() => ({}));
     if (res.ok && (data.success || data.item_status === 'CANCELLED')) {
       return { success: true, message: data.message || 'Item cancelled in kitchen (KOT)', ...data };
