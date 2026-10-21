@@ -286,15 +286,23 @@ function cleanCategoryName(rawName) {
  * Fetch categories for the current restaurant
  */
 export async function fetchCategories(restaurantId = activeRestaurantId) {
+  const targetId = restaurantId || activeRestaurantId;
   try {
-    let res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/public/menu/categories?restaurant_id=${restaurantId}`);
-    if (!res.ok) {
-      res = await fetchWithTimeout(`${activeBaseUrl}/api/categories?restaurant_id=${restaurantId}`);
+    let res = null;
+    if (authToken) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/menu/categories?restaurant_id=${targetId}`);
+    }
+    if (!res || !res.ok) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/public/menu/categories?restaurant_id=${targetId}`);
+    }
+    if (!res || !res.ok) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/categories?restaurant_id=${targetId}`);
     }
 
-    if (res.ok) {
+    if (res && res.ok) {
       const data = await res.json();
       const cleaned = data
+        .filter(c => !c.restaurant_id || c.restaurant_id === targetId)
         .map(c => cleanCategoryName(c.name))
         .filter(name => Boolean(name) && name.toLowerCase() !== 'all');
       const uniqueNames = Array.from(new Set(cleaned));
@@ -310,17 +318,26 @@ export async function fetchCategories(restaurantId = activeRestaurantId) {
  * Fetch menu items for the current restaurant
  */
 export async function fetchMenuItems(restaurantId = activeRestaurantId) {
+  const targetId = restaurantId || activeRestaurantId;
   try {
-    let res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/public/menu/items?restaurant_id=${restaurantId}`);
-    if (!res.ok) {
-      res = await fetchWithTimeout(`${activeBaseUrl}/api/items?restaurant_id=${restaurantId}`);
+    let res = null;
+    if (authToken) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/menu/items?restaurant_id=${targetId}`);
+    }
+    if (!res || !res.ok) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/public/menu/items?restaurant_id=${targetId}`);
+    }
+    if (!res || !res.ok) {
+      res = await fetchWithTimeout(`${activeBaseUrl}/api/items?restaurant_id=${targetId}`);
     }
 
-    if (res.ok) {
+    if (res && res.ok) {
       const rawItems = await res.json();
       
       // Also fetch categories to map category names properly
-      const catRes = await fetchWithTimeout(`${activeBaseUrl}/api/v1/public/menu/categories?restaurant_id=${restaurantId}`).catch(() => null);
+      const catRes = await fetchWithTimeout(
+        `${activeBaseUrl}/api/v1/public/menu/categories?restaurant_id=${targetId}`
+      ).catch(() => null);
       let catMap = {};
       if (catRes && catRes.ok) {
         const cats = await catRes.json();
@@ -329,12 +346,18 @@ export async function fetchMenuItems(restaurantId = activeRestaurantId) {
         });
       }
 
-      const items = rawItems.map(item => {
+      // STRICT ISOLATION: Guarantee no items from other restaurants leak in
+      const isolatedItems = Array.isArray(rawItems)
+        ? rawItems.filter(item => !item.restaurant_id || item.restaurant_id === targetId)
+        : [];
+
+      const items = isolatedItems.map(item => {
         const categoryName = catMap[item.category_id] || (item.category ? cleanCategoryName(item.category.name) : null) || 'General';
         const isVeg = item.ac_type !== 'Non-Veg';
 
         return {
           id: item.id,
+          restaurant_id: targetId,
           code: item.item_code ? String(item.item_code).trim() : `C${item.id}`,
           name: (item.name || 'Unnamed Item').trim(),
           category: categoryName,
@@ -360,7 +383,7 @@ export async function fetchMenuItems(restaurantId = activeRestaurantId) {
  * Used for dine-in orders with table number.
  */
 export async function placeOrder({
-  restaurantId = activeRestaurantId,
+  restaurantId,
   customerPhone,
   cartItems,
   paymentMethod = 'Cash',
@@ -371,7 +394,52 @@ export async function placeOrder({
   billNo,
 }) {
   const cartList = Object.values(cartItems);
+  const effectiveRestId = restaurantId || activeRestaurantId;
 
+  // 1. If staff/waiter is authenticated, use the dedicated POS order endpoint (/api/v1/orders)
+  if (authToken) {
+    try {
+      const posPayload = {
+        table_number: tableNumber || 'TB 1',
+        order_type: orderType || 'DINE_IN',
+        payment_method: paymentMethod || 'Pay at Counter',
+        cart: cartList.map(item => ({
+          id: typeof item.id === 'number' ? item.id : parseInt(String(item.id).replace(/\D/g, '')) || 1,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        total_amount: totalAmount,
+        bill_no: billNo || null,
+        customer_phone: (customerPhone || '').trim() || null,
+      };
+
+      const res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/orders?restaurant_id=${effectiveRestId}`, {
+        method: 'POST',
+        body: JSON.stringify(posPayload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        return {
+          success: true,
+          orderId: data.branch_order_id ? `#${data.branch_order_id}` : (data.orderId ? `ORD-${data.orderId}` : 'Success'),
+          dbOrderId: data.orderId,
+          branchOrderId: data.branch_order_id,
+          billNo: data.bill_no,
+          totalAmount: totalAmount,
+          status: 'PENDING',
+          message: data.message || 'Order placed successfully and sent to Kitchen (KOT)',
+        };
+      }
+    } catch (posErr) {
+      console.warn('[API] /api/v1/orders failed, attempting fallback to /api/orders:', posErr.message);
+    }
+  }
+
+  // 2. Fallback to /api/orders
   const payload = {
     phone: (customerPhone || '').trim(),
     table_number: tableNumber || 'TB 1',
@@ -389,7 +457,7 @@ export async function placeOrder({
   };
 
   try {
-    const res = await fetchWithTimeout(`${activeBaseUrl}/api/orders?restaurant_id=${restaurantId}`, {
+    const res = await fetchWithTimeout(`${activeBaseUrl}/api/orders?restaurant_id=${effectiveRestId}`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -424,6 +492,7 @@ export async function placeOrder({
  * cashier may not always have a token saved.
  */
 export async function fetchTables(restaurantId = activeRestaurantId) {
+  const targetId = restaurantId || activeRestaurantId;
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
@@ -434,27 +503,29 @@ export async function fetchTables(restaurantId = activeRestaurantId) {
 
   try {
     const res = await fetchWithTimeout(
-      `${activeBaseUrl}/api/v1/tables?restaurant_id=${restaurantId}`,
+      `${activeBaseUrl}/api/v1/tables?restaurant_id=${targetId}`,
       { headers },
       5000
     );
 
     if (res.ok) {
       const tables = await res.json();
+      // Strictly filter to this restaurant's tables
+      const filtered = (Array.isArray(tables) ? tables : []).filter(
+        t => !t.restaurant_id || t.restaurant_id === targetId
+      );
       // Sort by table_number numerically where possible
-      tables.sort((a, b) => {
+      filtered.sort((a, b) => {
         const na = parseInt(String(a.table_number).replace(/\D/g, '')) || 0;
         const nb = parseInt(String(b.table_number).replace(/\D/g, '')) || 0;
         return na - nb || String(a.table_number).localeCompare(String(b.table_number));
       });
-      return tables;
+      return filtered;
     } else if (res.status === 401 || res.status === 403) {
-      // Backend /api/v1/tables is restricted to HOTEL_ADMIN/SUPER_ADMIN.
-      // Cashier app smoothly falls back to the configured TB 1 - TB 15 tables.
       return [];
     }
   } catch (_err) {
-    // Silent fallback to local default tables
+    // Silent fallback
   }
   return [];
 }

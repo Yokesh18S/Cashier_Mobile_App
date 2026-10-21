@@ -39,37 +39,41 @@ export default function TableSelectionScreen({
   tableOrders = {},
   activeRestaurant,
   isBackendConnected,
+  loggedInUser,
 }) {
-  const [tables, setTables] = useState(DEFAULT_TABLES);
+  const targetRestaurantId = activeRestaurant?.id || loggedInUser?.restaurant_id;
+  const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState(null);
 
   const loadTables = useCallback(async (silent = false) => {
-    if (!silent && tables.length === 0) setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      const data = await fetchTables();
+      const data = await fetchTables(targetRestaurantId);
       if (data && data.length > 0) {
         setTables(data);
         setLastFetchTime(new Date());
       } else {
-        setTables(DEFAULT_TABLES);
+        const fallbacks = DEFAULT_TABLES.map(t => ({ ...t, restaurant_id: targetRestaurantId }));
+        setTables(fallbacks);
       }
     } catch (err) {
-      console.warn('[TableSelectionScreen] Failed to load tables from backend, using default TB 1-15 tables:', err);
-      setTables(DEFAULT_TABLES);
+      console.warn('[TableSelectionScreen] Failed to load tables from backend, using default tables:', err);
+      const fallbacks = DEFAULT_TABLES.map(t => ({ ...t, restaurant_id: targetRestaurantId }));
+      setTables(fallbacks);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [tables.length]);
+  }, [targetRestaurantId]);
 
   useEffect(() => {
     loadTables();
     // Poll every 30 seconds to keep occupancy fresh
     const interval = setInterval(() => loadTables(true), 30_000);
     return () => clearInterval(interval);
-  }, [loadTables]);
+  }, [loadTables, targetRestaurantId]);
 
   const handleRefresh = () => {
     setRefreshing(true);

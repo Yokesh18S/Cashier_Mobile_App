@@ -110,29 +110,36 @@ export default function App() {
   const [ordersHistory, setOrdersHistory] = useState([]);
 
   // ── BACKEND MENU LOAD ─────────────────────────────────────────────────
-  const loadBackendMenu = useCallback(async () => {
+  const loadBackendMenu = useCallback(async (targetRestId) => {
     setIsLoadingMenu(true);
     try {
       const health = await checkBackendHealth();
       setIsBackendConnected(health.connected);
       setBackendUrl(getActiveBaseUrl());
 
-      if (health.connected) {
-        if (health.activeRestaurant) setActiveRestaurant(health.activeRestaurant);
+      const effectiveRestId = targetRestId || loggedInUser?.restaurant_id || activeRestaurant?.id || getActiveRestaurantId();
 
-        const [liveCategories, liveItems] = await Promise.all([
-          fetchCategories(),
-          fetchMenuItems(),
-        ]);
-        if (liveCategories && liveCategories.length > 0) setCategories(liveCategories);
-        if (liveItems && liveItems.length > 0) setMenuItems(liveItems);
+      if (health.connected && health.restaurants && effectiveRestId) {
+        const matching = health.restaurants.find(r => r.id === effectiveRestId);
+        if (matching) {
+          setActiveRestaurant(matching);
+        } else if (loggedInUser?.restaurant_name) {
+          setActiveRestaurant({ id: effectiveRestId, name: loggedInUser.restaurant_name });
+        }
       }
+
+      const [liveCategories, liveItems] = await Promise.all([
+        fetchCategories(effectiveRestId),
+        fetchMenuItems(effectiveRestId),
+      ]);
+      if (liveCategories && liveCategories.length > 0) setCategories(liveCategories);
+      if (liveItems && liveItems.length > 0) setMenuItems(liveItems);
     } catch (err) {
       console.warn('[App] Backend check error:', err);
     } finally {
       setIsLoadingMenu(false);
     }
-  }, []);
+  }, [loggedInUser?.restaurant_id, loggedInUser?.restaurant_name, activeRestaurant?.id]);
 
   // On mount: check backend health and restore persisted session (persistent login)
   useEffect(() => {
@@ -144,20 +151,20 @@ export default function App() {
         if (!isMounted) return;
         setIsBackendConnected(health.connected);
         setBackendUrl(getActiveBaseUrl());
-        if (health.connected && health.activeRestaurant) {
-          setActiveRestaurant(health.activeRestaurant);
-        }
 
         // Restore persisted login session (persists across app closes, restarts, screen lock)
         const session = await getAuthSession();
         if (session && session.token && session.user && isMounted) {
           setAuthToken(session.token);
-          if (session.user.restaurant_id) {
-            setActiveRestaurantId(session.user.restaurant_id);
+          const restId = session.user.restaurant_id;
+          if (restId) {
+            setActiveRestaurantId(restId);
+            const matching = (health.restaurants || []).find(r => r.id === restId);
+            setActiveRestaurant(matching || { id: restId, name: session.user.restaurant_name || `Hotel #${restId}` });
           }
           setLoggedInUser(session.user);
           setScreen('table_select');
-          loadBackendMenu();
+          await loadBackendMenu(restId);
 
           // Refresh user profile / permissions in background
           verifyCurrentSession().then(freshUser => {
@@ -165,9 +172,15 @@ export default function App() {
               setLoggedInUser(freshUser);
               if (freshUser.restaurant_id) {
                 setActiveRestaurantId(freshUser.restaurant_id);
+                if (health.restaurants) {
+                  const m = health.restaurants.find(r => r.id === freshUser.restaurant_id);
+                  if (m) setActiveRestaurant(m);
+                }
               }
             }
           }).catch(() => {});
+        } else if (health.connected && health.activeRestaurant) {
+          setActiveRestaurant(health.activeRestaurant);
         }
       } catch (err) {
         console.warn('[App] Mount initialization error:', err);
@@ -180,23 +193,39 @@ export default function App() {
 
   // ── AUTH ───────────────────────────────────────────────────────────────
   const handleLoginSuccess = useCallback((token, user) => {
-    setLoggedInUser(user);
-    if (user?.restaurant_id) {
-      setActiveRestaurantId(user.restaurant_id);
+    setAuthToken(token);
+    const restId = user?.restaurant_id;
+    if (restId) {
+      setActiveRestaurantId(restId);
+      setActiveRestaurant({
+        id: restId,
+        name: user.restaurant_name || `Hotel #${restId}`,
+      });
     }
+    setLoggedInUser(user);
+    // Clear old state from previous session to avoid any cross-restaurant leak
+    setTableOrders({});
+    setCartItems({});
+    setActiveTable(null);
+    setActiveCustomerId(null);
+    setCategories(DEFAULT_CATEGORIES);
+    setMenuItems([]);
     setMainTab('tables');
     setScreen('table_select');
-    // Now do a full menu load in the background
-    loadBackendMenu();
+    // Load menu exclusively for this assigned restaurant
+    loadBackendMenu(restId);
   }, [loadBackendMenu]);
 
   const handleLogout = useCallback(async () => {
     await logoutUser();
     setLoggedInUser(null);
+    setActiveRestaurant(null);
     setActiveTable(null);
     setActiveCustomerId(null);
     setTableOrders({});
     setCartItems({});
+    setMenuItems(INITIAL_MENU_ITEMS);
+    setCategories(DEFAULT_CATEGORIES);
     setPhoneNumber('');
     setMainTab('tables');
     setScreen('login');
@@ -289,6 +318,9 @@ export default function App() {
   // ── TABLE NAVIGATION ───────────────────────────────────────────────────
   const handleSelectTable = useCallback((table) => {
     setActiveTable(table);
+    if (table?.restaurant_id) {
+      setActiveRestaurantId(table.restaurant_id);
+    }
     setScreen('customer_list');
   }, []);
 
@@ -352,8 +384,10 @@ export default function App() {
     }
 
     try {
-      const customerPhone = activeCustomer?.phone || '0000000000';
+      const customerPhone = activeCustomer?.phone || phoneNumber || '0000000000';
+      const targetRestaurantId = loggedInUser?.restaurant_id || activeRestaurant?.id || activeTable?.restaurant_id;
       const backendResult = await placeOrderForTable({
+        restaurantId: targetRestaurantId,
         customerPhone,
         cartItems: currentCartItems,
         tableNumber: activeTable?.table_number,
@@ -519,7 +553,9 @@ export default function App() {
             (s, i) => s + i.price * i.quantity, 0
           );
           const custTotal = custSubtotal;
+          const targetRestaurantId = loggedInUser?.restaurant_id || activeRestaurant?.id || activeTable?.restaurant_id;
           const res = await placeOrderForTable({
+            restaurantId: targetRestaurantId,
             customerPhone: customer.phone,
             cartItems: customer.cartItems,
             tableNumber: activeTable?.table_number,
@@ -626,6 +662,7 @@ export default function App() {
                 onSelectTable={handleSelectTable}
                 tableOrders={tableOrders}
                 activeRestaurant={activeRestaurant}
+                loggedInUser={loggedInUser}
                 isBackendConnected={isBackendConnected}
               />
             )}
@@ -694,7 +731,7 @@ export default function App() {
             <Header
               terminalName={
                 activeCustomer
-                  ? `T${activeTable?.table_number} · ${activeCustomer.label}`
+                  ? `${activeTable?.table_number?.startsWith('T') ? '' : 'T'}${activeTable?.table_number || ''} · ${activeCustomer.label}`
                   : terminalTitle
               }
               sessionCode={
