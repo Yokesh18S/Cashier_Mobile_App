@@ -91,6 +91,15 @@ export default function OrderView({
                     >
                       <Ionicons name="add" size={16} color={COLORS.textDark} />
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.trashBtn}
+                      onPress={() => onUpdateQuantity(item.id, 0)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                    </TouchableOpacity>
                   </View>
 
                   <Text style={styles.itemTotalText}>
@@ -215,6 +224,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.cardBg,
+  },
+  trashBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
   quantityText: {
     fontSize: 14,

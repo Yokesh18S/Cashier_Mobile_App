@@ -3,7 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
-export default function ItemList({ items, onAddToCart, cartItems = {} }) {
+export default function ItemList({
+  items,
+  onAddToCart,
+  onUpdateQuantity,
+  onRemoveItem,
+  cartItems = {},
+}) {
   const renderItem = ({ item }) => {
     const qtyInCart = cartItems[item.id]?.quantity || 0;
 
@@ -19,17 +25,46 @@ export default function ItemList({ items, onAddToCart, cartItems = {} }) {
 
         <View style={styles.priceActionCol}>
           <Text style={styles.itemPrice}>R.S. {item.price.toFixed(2)}</Text>
-          <TouchableOpacity
-            style={[styles.addButton, qtyInCart > 0 && styles.addButtonActive]}
-            onPress={() => onAddToCart(item)}
-            activeOpacity={0.7}
-          >
-            {qtyInCart > 0 ? (
-              <Text style={styles.qtyBadgeText}>+{qtyInCart}</Text>
-            ) : (
+          {qtyInCart > 0 ? (
+            <View style={styles.stepperContainer}>
+              <TouchableOpacity
+                style={styles.stepBtnMinus}
+                onPress={() => onUpdateQuantity && onUpdateQuantity(item.id, qtyInCart - 1)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="remove" size={14} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <Text style={styles.qtyText}>{qtyInCart}</Text>
+
+              <TouchableOpacity
+                style={styles.stepBtnPlus}
+                onPress={() => onAddToCart && onAddToCart(item)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="add" size={14} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.trashBtn}
+                onPress={() => onRemoveItem ? onRemoveItem(item.id) : (onUpdateQuantity && onUpdateQuantity(item.id, 0))}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="trash-outline" size={15} color="#DC2626" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => onAddToCart(item)}
+              activeOpacity={0.7}
+            >
               <Ionicons name="add" size={18} color={COLORS.textDark} />
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -145,6 +180,49 @@ const styles = StyleSheet.create({
   addButtonActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  stepBtnMinus: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBtnPlus: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    minWidth: 18,
+    textAlign: 'center',
+  },
+  trashBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
   qtyBadgeText: {
     color: '#FFFFFF',

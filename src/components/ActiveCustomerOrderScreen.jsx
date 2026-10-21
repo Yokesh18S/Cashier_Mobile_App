@@ -16,20 +16,32 @@ import { COLORS } from '../constants/theme';
  */
 export function getConsolidatedItems(customer) {
   const map = {};
-  (customer?.activeOrders || []).forEach((ord) => {
+  const orders = customer?.activeOrders || [];
+  const multipleOrders = orders.length > 1;
+
+  orders.forEach((ord, roundIdx) => {
+    const isOrdCancelled = (ord.status || '').toUpperCase() === 'CANCELLED';
     (ord.items || []).forEach((item) => {
-      const key = `${item.id || item.name}_${item.price}`;
+      const isItemCancelled = isOrdCancelled || (item.status || '').toUpperCase() === 'CANCELLED';
+      // Group by item + price + orderId + cancellation status so cancelling targets the specific order item
+      const key = `${item.id || item.name}_${item.price}_${ord.dbOrderId || ord.orderId}_${isItemCancelled ? 'cancelled' : 'active'}`;
       if (!map[key]) {
         map[key] = {
           id: item.id,
           name: item.name,
           price: item.price,
           quantity: item.quantity,
-          totalPrice: item.price * item.quantity,
+          totalPrice: isItemCancelled ? 0 : item.price * item.quantity,
+          status: isItemCancelled ? 'CANCELLED' : (item.status || ord.status || 'PENDING'),
+          orderId: ord.dbOrderId || ord.orderId,
+          roundLabel: multipleOrders ? `Round #${roundIdx + 1}` : null,
+          isCancelled: isItemCancelled,
         };
       } else {
         map[key].quantity += item.quantity;
-        map[key].totalPrice += item.price * item.quantity;
+        if (!isItemCancelled) {
+          map[key].totalPrice += item.price * item.quantity;
+        }
       }
     });
   });
@@ -43,6 +55,15 @@ export function getConsolidatedItems(customer) {
 function getStatusDetails(status = 'PENDING') {
   const s = String(status).toUpperCase();
   switch (s) {
+    case 'CANCELLED':
+      return {
+        label: 'KOT Cancelled',
+        color: '#DC2626',
+        bg: '#FEF2F2',
+        border: '#FECACA',
+        icon: 'close-circle-outline',
+        hint: 'Orders for this customer have been cancelled in the kitchen.',
+      };
     case 'READY':
       return {
         label: 'Ready to Serve',
@@ -89,6 +110,8 @@ export default function ActiveCustomerOrderScreen({
   onAddMoreItems,
   onSendBill,
   onBack,
+  onCancelItem,
+  onCancelOrder,
 }) {
   const [showRounds, setShowRounds] = useState(false);
 
@@ -96,26 +119,33 @@ export default function ActiveCustomerOrderScreen({
   const consolidatedItems = getConsolidatedItems(customer);
 
   const totalAmount = activeOrders.reduce(
-    (sum, ord) => sum + (ord.totalAmount || 0),
+    (sum, ord) => {
+      if ((ord.status || '').toUpperCase() === 'CANCELLED') return sum;
+      return sum + (ord.totalAmount || 0);
+    },
     0
   );
-  const totalItemCount = consolidatedItems.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  );
+  const totalItemCount = consolidatedItems
+    .filter(item => !item.isCancelled)
+    .reduce((sum, item) => sum + item.quantity, 0);
 
-  // Overall KOT status: if any is PREPARING -> PREPARING, if all READY -> READY, etc.
-  const hasReady = activeOrders.some(
+  // Overall KOT status
+  const nonCancelledOrders = activeOrders.filter(
+    (o) => (o.status || '').toUpperCase() !== 'CANCELLED'
+  );
+  const hasReady = nonCancelledOrders.some(
     (o) => (o.status || '').toUpperCase() === 'READY'
   );
-  const hasPreparing = activeOrders.some(
+  const hasPreparing = nonCancelledOrders.some(
     (o) => (o.status || '').toUpperCase() === 'PREPARING'
   );
   const allServed =
-    activeOrders.length > 0 &&
-    activeOrders.every((o) => (o.status || '').toUpperCase() === 'SERVED');
+    nonCancelledOrders.length > 0 &&
+    nonCancelledOrders.every((o) => (o.status || '').toUpperCase() === 'SERVED');
 
-  const overallStatus = hasReady
+  const overallStatus = nonCancelledOrders.length === 0 && activeOrders.length > 0
+    ? 'CANCELLED'
+    : hasReady
     ? 'READY'
     : hasPreparing
     ? 'PREPARING'
@@ -123,6 +153,36 @@ export default function ActiveCustomerOrderScreen({
     ? 'SERVED'
     : 'PENDING';
   const statusInfo = getStatusDetails(overallStatus);
+
+  const handleConfirmCancelItem = (item) => {
+    Alert.alert(
+      'Cancel KOT Item',
+      `Customer wants to remove or change "${item.name}"?\n\nThis will remove it from the running bill and indicate as cancelled in the Kitchen KOT.`,
+      [
+        { text: 'Keep Item', style: 'cancel' },
+        {
+          text: 'Cancel Item',
+          style: 'destructive',
+          onPress: () => onCancelItem && onCancelItem(item),
+        },
+      ]
+    );
+  };
+
+  const handleConfirmCancelRound = (ord, roundNumber) => {
+    Alert.alert(
+      `Cancel KOT Round #${roundNumber}`,
+      `Are you sure you want to cancel the entire KOT Round #${roundNumber} (${ord.orderId || `#${ord.dbOrderId}`})?\n\nThis will cancel all items in this submission in the kitchen.`,
+      [
+        { text: 'Keep KOT', style: 'cancel' },
+        {
+          text: 'Cancel KOT',
+          style: 'destructive',
+          onPress: () => onCancelOrder && onCancelOrder(ord.dbOrderId || ord.orderId),
+        },
+      ]
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -173,19 +233,44 @@ export default function ActiveCustomerOrderScreen({
           {/* Collapsible KOT rounds */}
           {showRounds && (
             <View style={styles.roundsContainer}>
-              {activeOrders.map((ord, idx) => (
-                <View key={ord.dbOrderId || ord.orderId || idx} style={styles.roundItem}>
-                  <View style={styles.roundTop}>
-                    <Text style={styles.roundTag}>KOT Round #{idx + 1}</Text>
-                    <Text style={styles.roundOrderId}>{ord.orderId || `#${ord.dbOrderId}`}</Text>
-                    <Text style={styles.roundStatusBadge}>{(ord.status || 'PENDING').toUpperCase()}</Text>
+              {activeOrders.map((ord, idx) => {
+                const isOrdCancelled = (ord.status || '').toUpperCase() === 'CANCELLED';
+                return (
+                  <View key={ord.dbOrderId || ord.orderId || idx} style={[styles.roundItem, isOrdCancelled && styles.roundItemCancelled]}>
+                    <View style={styles.roundTop}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.roundTag, isOrdCancelled && styles.roundTagCancelled]}>KOT Round #{idx + 1}</Text>
+                        <Text style={styles.roundOrderId}>{ord.orderId || `#${ord.dbOrderId}`}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.roundStatusBadge, isOrdCancelled && styles.roundStatusBadgeCancelled]}>
+                          {(ord.status || 'PENDING').toUpperCase()}
+                        </Text>
+                        {!isOrdCancelled && (
+                          <TouchableOpacity
+                            style={styles.cancelRoundBtn}
+                            onPress={() => handleConfirmCancelRound(ord, idx + 1)}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="trash-outline" size={13} color="#DC2626" />
+                            <Text style={styles.cancelRoundBtnText}>Cancel</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                    <Text style={[styles.roundItemsText, isOrdCancelled && styles.roundItemsTextCancelled]}>
+                      {(ord.items || []).map((i) => {
+                        const isICancelled = isOrdCancelled || (i.status || '').toUpperCase() === 'CANCELLED';
+                        return `${i.name} × ${i.quantity}${isICancelled ? ' (Cancelled)' : ''}`;
+                      }).join(', ')}
+                    </Text>
+                    <Text style={[styles.roundSubtotal, isOrdCancelled && styles.roundSubtotalCancelled]}>
+                      {isOrdCancelled ? 'CANCELLED' : `₹${(ord.totalAmount || 0).toFixed(2)}`}
+                    </Text>
                   </View>
-                  <Text style={styles.roundItemsText}>
-                    {(ord.items || []).map((i) => `${i.name} × ${i.quantity}`).join(', ')}
-                  </Text>
-                  <Text style={styles.roundSubtotal}>₹{(ord.totalAmount || 0).toFixed(2)}</Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -220,15 +305,45 @@ export default function ActiveCustomerOrderScreen({
           ) : (
             <View style={styles.itemsTable}>
               {consolidatedItems.map((item, idx) => (
-                <View key={item.id || idx} style={styles.itemRow}>
-                  <View style={styles.qtyBadge}>
-                    <Text style={styles.qtyBadgeText}>{item.quantity}×</Text>
+                <View key={item.id || idx} style={[styles.itemRow, item.isCancelled && styles.itemRowCancelled]}>
+                  <View style={[styles.qtyBadge, item.isCancelled && styles.qtyBadgeCancelled]}>
+                    <Text style={[styles.qtyBadgeText, item.isCancelled && styles.qtyBadgeTextCancelled]}>
+                      {item.quantity}×
+                    </Text>
                   </View>
                   <View style={styles.itemInfoCol}>
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    <Text style={styles.itemUnit}>@ ₹{item.price.toFixed(2)} each</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={[styles.itemName, item.isCancelled && styles.itemNameCancelled]}>
+                        {item.name}
+                      </Text>
+                      {item.roundLabel && (
+                        <View style={styles.roundItemBadge}>
+                          <Text style={styles.roundItemBadgeText}>{item.roundLabel}</Text>
+                        </View>
+                      )}
+                      {item.isCancelled && (
+                        <View style={styles.cancelledBadge}>
+                          <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.itemUnit, item.isCancelled && styles.itemUnitCancelled]}>
+                      @ ₹{item.price.toFixed(2)} each
+                    </Text>
                   </View>
-                  <Text style={styles.itemTotal}>₹{item.totalPrice.toFixed(2)}</Text>
+                  <Text style={[styles.itemTotal, item.isCancelled && styles.itemTotalCancelled]}>
+                    {item.isCancelled ? '₹0.00' : `₹${item.totalPrice.toFixed(2)}`}
+                  </Text>
+                  {!item.isCancelled && (
+                    <TouchableOpacity
+                      style={styles.cancelItemBtn}
+                      onPress={() => handleConfirmCancelItem(item)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               ))}
             </View>
@@ -440,6 +555,43 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 2,
   },
+  roundItemCancelled: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    opacity: 0.8,
+  },
+  roundTagCancelled: {
+    color: '#991B1B',
+    textDecorationLine: 'line-through',
+  },
+  roundStatusBadgeCancelled: {
+    color: '#DC2626',
+    backgroundColor: '#FEE2E2',
+  },
+  cancelRoundBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  cancelRoundBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  roundItemsTextCancelled: {
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  roundSubtotalCancelled: {
+    color: '#DC2626',
+    fontWeight: '800',
+  },
   questionBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -545,6 +697,65 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.textDark,
+  },
+  itemRowCancelled: {
+    opacity: 0.65,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    marginVertical: 2,
+    borderBottomWidth: 0,
+  },
+  qtyBadgeCancelled: {
+    backgroundColor: '#FEE2E2',
+  },
+  qtyBadgeTextCancelled: {
+    color: '#991B1B',
+    textDecorationLine: 'line-through',
+  },
+  itemNameCancelled: {
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  itemUnitCancelled: {
+    color: '#9CA3AF',
+  },
+  itemTotalCancelled: {
+    color: '#DC2626',
+    textDecorationLine: 'line-through',
+  },
+  cancelledBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  cancelledBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#DC2626',
+    letterSpacing: 0.5,
+  },
+  roundItemBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  roundItemBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  cancelItemBtn: {
+    padding: 6,
+    marginLeft: 8,
+    borderRadius: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   runningTotalBox: {
     backgroundColor: COLORS.chipBg,

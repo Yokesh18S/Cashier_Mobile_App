@@ -42,6 +42,8 @@ import {
   placeOrderForTable,
   fetchOrderStatus,
   settleOrderPayment,
+  cancelOrder,
+  cancelOrderItem,
   getActiveBaseUrl,
   setAuthToken,
   setActiveRestaurantId,
@@ -434,6 +436,113 @@ export default function App() {
     }
   };
 
+  // ── CANCEL ITEM / KOT SUBMISSION ──
+  const handleCancelItemFromKot = useCallback(async (item) => {
+    const targetRestaurantId = loggedInUser?.restaurant_id || activeRestaurant?.id || activeTable?.restaurant_id || activeRestaurantId;
+    const orderIdToCancel = item.orderId || (item.orderIds && item.orderIds[0]);
+
+    if (!orderIdToCancel) {
+      Alert.alert('Error', 'Could not determine the order ID for this item.');
+      return;
+    }
+
+    try {
+      const res = await cancelOrderItem({
+        orderId: orderIdToCancel,
+        itemId: item.id,
+        restaurantId: targetRestaurantId,
+        reason: 'Customer changed item',
+      });
+
+      if (res && res.success) {
+        setTableOrders(prev => {
+          const tableCustomers = (prev[activeTable.id] || []).map(c => {
+            if (c.id !== activeCustomerId) return c;
+            const updatedOrders = (c.activeOrders || []).map(ord => {
+              const matchesOrder = String(ord.dbOrderId) === String(orderIdToCancel) || String(ord.orderId) === String(orderIdToCancel);
+              if (!matchesOrder) return ord;
+
+              const updatedItems = (ord.items || []).map(i => {
+                if (String(i.id) === String(item.id) || i.name === item.name) {
+                  return { ...i, status: 'CANCELLED' };
+                }
+                return i;
+              });
+
+              const remainingActive = updatedItems.filter(i => (i.status || '').toUpperCase() !== 'CANCELLED');
+              const newTotal = remainingActive.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+              const newStatus = remainingActive.length === 0 ? 'CANCELLED' : ord.status;
+
+              return {
+                ...ord,
+                items: updatedItems,
+                totalAmount: newTotal,
+                status: newStatus,
+              };
+            });
+
+            return { ...c, activeOrders: updatedOrders };
+          });
+
+          return { ...prev, [activeTable.id]: tableCustomers };
+        });
+
+        Alert.alert(
+          'Item Cancelled in Kitchen',
+          `"${item.name}" has been cancelled in the Kitchen KOT and removed from the customer's running bill.`
+        );
+      } else {
+        Alert.alert('Cancellation Error', res?.error || 'Failed to cancel item in KOT.');
+      }
+    } catch (err) {
+      Alert.alert('Network Error', err.message || 'Could not connect to server.');
+    }
+  }, [loggedInUser?.restaurant_id, activeRestaurant?.id, activeTable, activeCustomerId]);
+
+  const handleCancelOrderFromKot = useCallback(async (orderId) => {
+    const targetRestaurantId = loggedInUser?.restaurant_id || activeRestaurant?.id || activeTable?.restaurant_id || activeRestaurantId;
+
+    try {
+      const res = await cancelOrder({
+        orderId,
+        restaurantId: targetRestaurantId,
+        reason: 'Customer cancelled KOT submission',
+      });
+
+      if (res && res.success) {
+        setTableOrders(prev => {
+          const tableCustomers = (prev[activeTable.id] || []).map(c => {
+            if (c.id !== activeCustomerId) return c;
+            const updatedOrders = (c.activeOrders || []).map(ord => {
+              const matchesOrder = String(ord.dbOrderId) === String(orderId) || String(ord.orderId) === String(orderId);
+              if (!matchesOrder) return ord;
+
+              return {
+                ...ord,
+                status: 'CANCELLED',
+                totalAmount: 0,
+                items: (ord.items || []).map(i => ({ ...i, status: 'CANCELLED' })),
+              };
+            });
+
+            return { ...c, activeOrders: updatedOrders };
+          });
+
+          return { ...prev, [activeTable.id]: tableCustomers };
+        });
+
+        Alert.alert(
+          'KOT Cancelled',
+          `Order #${orderId} has been cancelled in the Kitchen KOT.`
+        );
+      } else {
+        Alert.alert('Cancellation Error', res?.error || 'Failed to cancel KOT.');
+      }
+    } catch (err) {
+      Alert.alert('Network Error', err.message || 'Could not connect to server.');
+    }
+  }, [loggedInUser?.restaurant_id, activeRestaurant?.id, activeTable, activeCustomerId]);
+
   // ── FINAL BILL SETTLEMENT FOR A SINGLE CUSTOMER ──
   const handleConfirmCustomerSettlement = async ({ customer, method, amountPaid }) => {
     try {
@@ -714,6 +823,8 @@ export default function App() {
               customer={activeCustomer}
               onAddMoreItems={() => handleAddMoreItemsForCustomer(activeCustomer.id)}
               onSendBill={() => handleOpenCustomerBill(activeCustomer)}
+              onCancelItem={handleCancelItemFromKot}
+              onCancelOrder={handleCancelOrderFromKot}
               onBack={() => {
                 setActiveCustomerId(null);
                 setScreen('customer_list');
@@ -815,6 +926,8 @@ export default function App() {
                 <ItemList
                   items={filteredItems}
                   onAddToCart={handleAddToCart}
+                  onUpdateQuantity={handleUpdateQuantity}
+                  onRemoveItem={(itemId) => handleUpdateQuantity(itemId, 0)}
                   cartItems={currentCartItems}
                 />
                 <BottomOrderBar

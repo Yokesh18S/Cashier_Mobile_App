@@ -644,4 +644,69 @@ export async function fetchLiveOrders(restaurantId = activeRestaurantId) {
   }
 }
 
+/**
+ * Cancel an entire order / KOT submission.
+ * Notifies the kitchen KDS that the order is CANCELLED and recalculates bills.
+ *
+ * @param {object} params
+ * @param {number|string} params.orderId
+ * @param {string} [params.reason]
+ * @param {number} [params.restaurantId]
+ * @returns {Promise<{ success: boolean, message?: string, error?: string }>}
+ */
+export async function cancelOrder({ orderId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
+  try {
+    const cleanId = String(orderId).replace(/\D/g, '') || orderId;
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/orders/${cleanId}/cancel?restaurant_id=${restaurantId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      },
+      6000
+    );
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.success || data.status === 'CANCELLED')) {
+      return { success: true, message: data.message || 'Order cancelled in kitchen (KOT)' };
+    }
+    return { success: false, error: data.detail || data.message || 'Failed to cancel order' };
+  } catch (err) {
+    console.warn('[API] cancelOrder error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Cancel a specific item within an order / KOT submission.
+ * Recalculates financial totals and indicates item cancellation in kitchen KOT.
+ *
+ * @param {object} params
+ * @param {number|string} params.orderId
+ * @param {number} params.itemId - OrderItem id or MenuItem id
+ * @param {string} [params.reason]
+ * @param {number} [params.restaurantId]
+ * @returns {Promise<{ success: boolean, message?: string, error?: string }>}
+ */
+export async function cancelOrderItem({ orderId, itemId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
+  try {
+    const cleanId = String(orderId).replace(/\D/g, '') || orderId;
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/orders/${cleanId}/items/${itemId}/cancel?restaurant_id=${restaurantId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      },
+      6000
+    );
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.success || data.item_status === 'CANCELLED')) {
+      return { success: true, message: data.message || 'Item cancelled in kitchen (KOT)', ...data };
+    }
+    return { success: false, error: data.detail || data.message || 'Failed to cancel item' };
+  } catch (err) {
+    console.warn('[API] cancelOrderItem error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 
