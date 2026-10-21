@@ -657,10 +657,15 @@ export async function fetchLiveOrders(restaurantId = activeRestaurantId) {
 export async function cancelOrder({ orderId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
   try {
     const cleanId = String(orderId).replace(/\D/g, '') || orderId;
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const res = await fetchWithTimeout(
       `${activeBaseUrl}/api/v1/orders/${cleanId}/cancel?restaurant_id=${restaurantId}`,
       {
         method: 'POST',
+        headers,
         body: JSON.stringify({ reason }),
       },
       6000
@@ -690,10 +695,15 @@ export async function cancelOrder({ orderId, reason = 'Customer changed item', r
 export async function cancelOrderItem({ orderId, itemId, reason = 'Customer changed item', restaurantId = activeRestaurantId }) {
   try {
     const cleanId = String(orderId).replace(/\D/g, '') || orderId;
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const res = await fetchWithTimeout(
       `${activeBaseUrl}/api/v1/orders/${cleanId}/items/${itemId}/cancel?restaurant_id=${restaurantId}`,
       {
         method: 'POST',
+        headers,
         body: JSON.stringify({ reason }),
       },
       6000
