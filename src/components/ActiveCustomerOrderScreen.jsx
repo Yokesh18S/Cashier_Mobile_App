@@ -238,9 +238,16 @@ export default function ActiveCustomerOrderScreen({
                 return (
                   <View key={ord.dbOrderId || ord.orderId || idx} style={[styles.roundItem, isOrdCancelled && styles.roundItemCancelled]}>
                     <View style={styles.roundTop}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <Text style={[styles.roundTag, isOrdCancelled && styles.roundTagCancelled]}>KOT Round #{idx + 1}</Text>
                         <Text style={styles.roundOrderId}>{ord.orderId || `#${ord.dbOrderId}`}</Text>
+                        {(ord.billNo || ord.bill_no) ? (
+                          <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, borderWidth: 1, borderColor: '#86EFAC' }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: '#15803D' }}>
+                              Bill #{ord.billNo || ord.bill_no}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[styles.roundStatusBadge, isOrdCancelled && styles.roundStatusBadgeCancelled]}>

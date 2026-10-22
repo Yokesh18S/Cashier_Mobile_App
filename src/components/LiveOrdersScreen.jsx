@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
+  Vibration,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
@@ -38,6 +39,7 @@ export default function LiveOrdersScreen({
   const [selectedFilter, setSelectedFilter] = useState('ALL');
   const [lastUpdated, setLastUpdated] = useState(null);
   const isMounted = useRef(true);
+  const knownOrderIdsRef = useRef(null);
 
   const restaurantId = loggedInUser?.restaurant_id || activeRestaurant?.id || 1;
 
@@ -46,7 +48,22 @@ export default function LiveOrdersScreen({
     try {
       const data = await fetchLiveOrders(restaurantId);
       if (isMounted.current) {
-        setOrders(Array.isArray(data) ? data : []);
+        const orderList = Array.isArray(data) ? data : [];
+        if (orderList.length > 0) {
+          const currentIds = orderList.map(o => o.order_id || o.id);
+          if (knownOrderIdsRef.current === null) {
+            knownOrderIdsRef.current = new Set(currentIds);
+          } else {
+            const hasNew = currentIds.some(id => !knownOrderIdsRef.current.has(id));
+            if (hasNew) {
+              try {
+                Vibration.vibrate([400, 200, 400]);
+              } catch (e) {}
+              currentIds.forEach(id => knownOrderIdsRef.current.add(id));
+            }
+          }
+        }
+        setOrders(orderList);
         setLastUpdated(new Date());
       }
     } catch (err) {
@@ -148,9 +165,18 @@ export default function LiveOrdersScreen({
         {/* Card Header */}
         <View style={styles.cardHeader}>
           <View style={styles.orderNumberBox}>
-            <Text style={styles.orderIdText}>
-              {order.branch_order_id ? `#${order.branch_order_id}` : `ORD-${order.order_id || order.id}`}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={styles.orderIdText}>
+                Order #{order.branch_order_id || order.order_id || order.id}
+              </Text>
+              {order.bill_no ? (
+                <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#86EFAC' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#15803D' }}>
+                    Bill #{order.bill_no}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
             {timeDisplay ? (
               <Text style={styles.orderTimeText}>{timeDisplay}</Text>
             ) : null}

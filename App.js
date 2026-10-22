@@ -402,6 +402,7 @@ export default function App() {
         const newOrder = {
           dbOrderId: backendResult.dbOrderId,
           orderId: backendResult.orderId,
+          billNo: backendResult.billNo,
           items: placedItems,
           totalAmount,
           status: 'PENDING',
