@@ -1,17 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
-import { fetchTables } from '../services/api';
 
 /**
  * TableSelectionScreen
@@ -37,48 +33,8 @@ export const DEFAULT_TABLES = Array.from({ length: 15 }, (_, i) => ({
 export default function TableSelectionScreen({
   onSelectTable,
   tableOrders = {},
-  activeRestaurant,
-  isBackendConnected,
-  loggedInUser,
 }) {
-  const targetRestaurantId = activeRestaurant?.id || loggedInUser?.restaurant_id;
-  const [tables, setTables] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastFetchTime, setLastFetchTime] = useState(null);
-
-  const loadTables = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await fetchTables(targetRestaurantId);
-      if (data && data.length > 0) {
-        setTables(data);
-        setLastFetchTime(new Date());
-      } else {
-        const fallbacks = DEFAULT_TABLES.map(t => ({ ...t, restaurant_id: targetRestaurantId }));
-        setTables(fallbacks);
-      }
-    } catch (err) {
-      console.warn('[TableSelectionScreen] Failed to load tables from backend, using default tables:', err);
-      const fallbacks = DEFAULT_TABLES.map(t => ({ ...t, restaurant_id: targetRestaurantId }));
-      setTables(fallbacks);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [targetRestaurantId]);
-
-  useEffect(() => {
-    loadTables();
-    // Poll every 30 seconds to keep occupancy fresh
-    const interval = setInterval(() => loadTables(true), 30_000);
-    return () => clearInterval(interval);
-  }, [loadTables, targetRestaurantId]);
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadTables(true);
-  };
+  const tables = DEFAULT_TABLES;
 
   const getTableLiveOrderInfo = (tableId) => {
     const customers = tableOrders[tableId] || [];
@@ -215,50 +171,15 @@ export default function TableSelectionScreen({
         </View>
       </View>
 
-      {loading && tables.length === 0 ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading tables...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={tables}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderTable}
-          numColumns={3}
-          contentContainerStyle={styles.gridContent}
-          columnWrapperStyle={styles.gridRow}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={COLORS.primary}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="table-off" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyTitle}>No tables found</Text>
-              <Text style={styles.emptyDesc}>
-                {isBackendConnected
-                  ? 'No tables configured for this restaurant.'
-                  : 'Backend is offline. Connect to see tables.'}
-              </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={() => loadTables()}>
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          }
-          ListFooterComponent={
-            lastFetchTime ? (
-              <Text style={styles.lastFetchText}>
-                Updated {lastFetchTime.toLocaleTimeString()}
-              </Text>
-            ) : null
-          }
-        />
-      )}
+      <FlatList
+        data={tables}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderTable}
+        numColumns={3}
+        contentContainerStyle={styles.gridContent}
+        columnWrapperStyle={styles.gridRow}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

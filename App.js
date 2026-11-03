@@ -21,7 +21,6 @@ import CustomerListScreen from './src/components/CustomerListScreen';
 import TableBillingModal from './src/components/TableBillingModal';
 import ActiveCustomerOrderScreen from './src/components/ActiveCustomerOrderScreen';
 import CustomerBillingModal from './src/components/CustomerBillingModal';
-import LiveOrdersScreen from './src/components/LiveOrdersScreen';
 
 // Ordering UI components
 import Header from './src/components/Header';
@@ -79,7 +78,6 @@ export default function App() {
   // ── NAVIGATION ───────────────────────────────────────────────────────
   // screen: 'login' | 'table_select' | 'customer_list' | 'ordering'
   const [screen, setScreen] = useState('login');
-  const [mainTab, setMainTab] = useState('tables'); // 'tables' | 'live_orders'
 
   // Logged-in cashier user info
   const [loggedInUser, setLoggedInUser] = useState(null);
@@ -747,7 +745,7 @@ export default function App() {
           />
         )}
 
-        {/* ── TABLE SELECTION / LIVE ORDERS SCREEN ── */}
+        {/* ── TABLE SELECTION SCREEN ── */}
         {screen === 'table_select' && (
           <View style={styles.container}>
             <Header
@@ -758,24 +756,11 @@ export default function App() {
               backendUrl={backendUrl}
               onLogout={handleLogout}
               onPressStatus={() => setIsServerConfigVisible(true)}
-              currentView={mainTab}
-              onChangeView={(v) => setMainTab(v)}
             />
-            {mainTab === 'live_orders' ? (
-              <LiveOrdersScreen
-                loggedInUser={loggedInUser}
-                activeRestaurant={activeRestaurant}
-                onGoToTables={() => setMainTab('tables')}
-              />
-            ) : (
-              <TableSelectionScreen
-                onSelectTable={handleSelectTable}
-                tableOrders={tableOrders}
-                activeRestaurant={activeRestaurant}
-                loggedInUser={loggedInUser}
-                isBackendConnected={isBackendConnected}
-              />
-            )}
+            <TableSelectionScreen
+              onSelectTable={handleSelectTable}
+              tableOrders={tableOrders}
+            />
           </View>
         )}
 

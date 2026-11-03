@@ -11,8 +11,6 @@ export default function Header({
   backendUrl = '',
   onLogout,
   onPressStatus,
-  currentView,
-  onChangeView,
 }) {
   const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
@@ -74,43 +72,6 @@ export default function Header({
           </TouchableOpacity>
         ) : null}
       </View>
-
-      {/* Navigation switcher between Tables and Live Orders */}
-      {onChangeView ? (
-        <View style={styles.navToggleRow}>
-          <TouchableOpacity
-            style={[styles.navTab, currentView === 'tables' && styles.navTabActive]}
-            onPress={() => onChangeView('tables')}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name="grid-outline"
-              size={13}
-              color={currentView === 'tables' ? COLORS.primary : COLORS.textMuted}
-              style={{ marginRight: 5 }}
-            />
-            <Text style={[styles.navTabText, currentView === 'tables' && styles.navTabTextActive]}>
-              Tables
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.navTab, currentView === 'live_orders' && styles.navTabActive]}
-            onPress={() => onChangeView('live_orders')}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name="time-outline"
-              size={13}
-              color={currentView === 'live_orders' ? COLORS.primary : COLORS.textMuted}
-              style={{ marginRight: 5 }}
-            />
-            <Text style={[styles.navTabText, currentView === 'live_orders' && styles.navTabTextActive]}>
-              Live Orders
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
 
       <View style={styles.metaRow}>
         <Text style={styles.metaText}>
@@ -212,38 +173,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FECACA',
-  },
-  navToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.chipBg,
-    borderRadius: 8,
-    padding: 3,
-    marginTop: 8,
-  },
-  navTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  navTabActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  navTabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  navTabTextActive: {
-    color: COLORS.primary,
-    fontWeight: '800',
   },
   metaRow: {
     flexDirection: 'row',
