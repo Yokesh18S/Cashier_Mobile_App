@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import { openWhatsAppDirect, formatBillReceiptText } from '../services/whatsapp';
 
 /**
  * Consolidates all ordered items across all KOT submissions for this customer.
@@ -184,6 +185,33 @@ export default function ActiveCustomerOrderScreen({
     );
   };
 
+  const handleShareRunningBillWhatsApp = async () => {
+    const cleanPhone = (customer?.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      Alert.alert('Phone Required', 'Customer does not have a valid 10-digit mobile number.');
+      return;
+    }
+
+    try {
+      const text = formatBillReceiptText({
+        restaurantName: 'DATA UDIPI',
+        tableNumber: table?.table_number,
+        customerName: customer?.label || 'Guest',
+        customerPhone: cleanPhone,
+        billNo: activeOrders?.[0]?.billNo || activeOrders?.[0]?.dbOrderId || '',
+        orderId: activeOrders?.[0]?.orderId || '',
+        items: consolidatedItems,
+        subtotal: totalAmount,
+        totalAmount: totalAmount,
+        paymentMethod: 'Running Bill (Dine-in)',
+        date: new Date(),
+      });
+      await openWhatsAppDirect(cleanPhone, text);
+    } catch (err) {
+      Alert.alert('WhatsApp Error', err.message);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Top Header */}
@@ -298,10 +326,22 @@ export default function ActiveCustomerOrderScreen({
         {/* Running Bill / Accumulated Items List */}
         <View style={styles.billSection}>
           <View style={styles.billSectionHeader}>
-            <Text style={styles.billSectionTitle}>Accumulated Bill Items</Text>
-            <Text style={styles.itemCountText}>
-              {totalItemCount} item{totalItemCount !== 1 ? 's' : ''} total
-            </Text>
+            <View>
+              <Text style={styles.billSectionTitle}>Accumulated Bill Items</Text>
+              <Text style={styles.itemCountText}>
+                {totalItemCount} item{totalItemCount !== 1 ? 's' : ''} total
+              </Text>
+            </View>
+            {totalAmount > 0 && customer?.phone ? (
+              <TouchableOpacity
+                style={styles.waQuickShareBtn}
+                onPress={handleShareRunningBillWhatsApp}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="logo-whatsapp" size={14} color="#15803D" style={{ marginRight: 4 }} />
+                <Text style={styles.waQuickShareBtnText}>WhatsApp</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {consolidatedItems.length === 0 ? (
@@ -656,6 +696,21 @@ const styles = StyleSheet.create({
   itemCountText: {
     fontSize: 12,
     color: COLORS.textMuted,
+  },
+  waQuickShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  waQuickShareBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
   },
   emptyItemsBox: {
     alignItems: 'center',

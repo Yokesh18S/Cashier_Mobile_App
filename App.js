@@ -32,6 +32,7 @@ import ItemList from './src/components/ItemList';
 import OrderView from './src/components/OrderView';
 import BottomOrderBar from './src/components/BottomOrderBar';
 import ServerConfigModal from './src/components/ServerConfigModal';
+import WhatsAppConfigModal from './src/components/WhatsAppConfigModal';
 
 import {
   checkBackendHealth,
@@ -106,6 +107,7 @@ export default function App() {
   const [isCustomerBillingVisible, setIsCustomerBillingVisible] = useState(false);
   const [selectedBillingCustomer, setSelectedBillingCustomer] = useState(null);
   const [isServerConfigVisible, setIsServerConfigVisible] = useState(false);
+  const [isWhatsAppConfigVisible, setIsWhatsAppConfigVisible] = useState(false);
   const [isTableBillingVisible, setIsTableBillingVisible] = useState(false);
   const [ordersHistory, setOrdersHistory] = useState([]);
 
@@ -756,6 +758,7 @@ export default function App() {
               backendUrl={backendUrl}
               onLogout={handleLogout}
               onPressStatus={() => setIsServerConfigVisible(true)}
+              onPressWhatsApp={() => setIsWhatsAppConfigVisible(true)}
             />
             <TableSelectionScreen
               onSelectTable={handleSelectTable}
@@ -777,6 +780,7 @@ export default function App() {
               backendUrl={backendUrl}
               onLogout={handleLogout}
               onPressStatus={() => setIsServerConfigVisible(true)}
+              onPressWhatsApp={() => setIsWhatsAppConfigVisible(true)}
             />
             <CustomerListScreen
               table={activeTable}
@@ -841,6 +845,7 @@ export default function App() {
               backendUrl={backendUrl}
               onLogout={handleLogout}
               onPressStatus={() => setIsServerConfigVisible(true)}
+              onPressWhatsApp={() => setIsWhatsAppConfigVisible(true)}
             />
 
             {/* Back button strip for dine-in mode */}
@@ -944,6 +949,7 @@ export default function App() {
           customer={selectedBillingCustomer || activeCustomer}
           onConfirmSettlement={handleConfirmCustomerSettlement}
           onSettlementSuccess={handleCustomerSettlementSuccess}
+          onOpenWhatsAppSettings={() => setIsWhatsAppConfigVisible(true)}
         />
         <ServerConfigModal
           visible={isServerConfigVisible}
@@ -951,6 +957,11 @@ export default function App() {
           isBackendConnected={isBackendConnected}
           activeRestaurant={activeRestaurant}
           onConfigUpdated={handleConfigUpdated}
+          onOpenWhatsAppConfig={() => setIsWhatsAppConfigVisible(true)}
+        />
+        <WhatsAppConfigModal
+          visible={isWhatsAppConfigVisible}
+          onClose={() => setIsWhatsAppConfigVisible(false)}
         />
       </SafeAreaView>
     </SafeAreaProvider>

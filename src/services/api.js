@@ -392,9 +392,11 @@ export async function placeOrder({
   orderType = 'DINE_IN',
   tableNumber = '',
   billNo,
+  is_ac = false,
 }) {
   const cartList = Object.values(cartItems);
   const effectiveRestId = restaurantId || activeRestaurantId;
+  const isAcBill = Boolean(is_ac || (orderType && orderType.toUpperCase().includes('AC')) || (tableNumber && tableNumber.toUpperCase().includes('AC')));
 
   // 1. If staff/waiter is authenticated, use the dedicated POS order endpoint (/api/v1/orders)
   if (authToken) {
@@ -403,6 +405,8 @@ export async function placeOrder({
         table_number: tableNumber || 'TB 1',
         order_type: orderType || 'DINE_IN',
         payment_method: paymentMethod || 'Pay at Counter',
+        is_ac: isAcBill,
+        order_source: 'CASHIER_MOBILE',
         cart: cartList.map(item => ({
           id: typeof item.id === 'number' ? item.id : parseInt(String(item.id).replace(/\D/g, '')) || 1,
           quantity: item.quantity,
@@ -415,6 +419,9 @@ export async function placeOrder({
 
       const res = await fetchWithTimeout(`${activeBaseUrl}/api/v1/orders?restaurant_id=${effectiveRestId}`, {
         method: 'POST',
+        headers: {
+          'X-Order-Source': 'CASHIER_MOBILE',
+        },
         body: JSON.stringify(posPayload),
       });
 
@@ -445,6 +452,8 @@ export async function placeOrder({
     table_number: tableNumber || 'TB 1',
     order_type: orderType,
     payment_method: paymentMethod,
+    is_ac: isAcBill,
+    order_source: 'CASHIER_MOBILE',
     cart: cartList.map(item => ({
       id: typeof item.id === 'number' ? item.id : parseInt(String(item.id).replace(/\D/g, '')) || 1,
       quantity: item.quantity,
@@ -459,6 +468,9 @@ export async function placeOrder({
   try {
     const res = await fetchWithTimeout(`${activeBaseUrl}/api/orders?restaurant_id=${effectiveRestId}`, {
       method: 'POST',
+      headers: {
+        'X-Order-Source': 'CASHIER_MOBILE',
+      },
       body: JSON.stringify(payload),
     });
 
@@ -708,5 +720,81 @@ export async function cancelOrderItem({ orderId, itemId, reason = 'Customer chan
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Send WhatsApp bill for an order via backend endpoint
+ */
+export async function sendWhatsAppBillViaBackend(orderId, customerPhone = null) {
+  try {
+    const cleanId = String(orderId).replace(/\D/g, '') || orderId;
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/orders/${cleanId}/send-whatsapp-bill`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ phone: customerPhone }),
+      },
+      15000
+    );
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[API] sendWhatsAppBillViaBackend error:', err.message);
+  }
+  return null;
+}
+
+/**
+ * Send complete WhatsApp Bill Bundle (Template + PDF) via Backend
+ */
+export async function sendWhatsAppBillBundleDirect(billData, phone = null, orderId = null) {
+  try {
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/whatsapp/send-bill-bundle`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          phone: phone || billData?.customerPhone || billData?.phone,
+          bill_data: billData,
+          order_id: orderId || billData?.orderId || billData?.dbOrderId,
+        }),
+      },
+      25000
+    );
+    if (res.ok) {
+      return await res.json();
+    }
+    const errData = await res.json().catch(() => ({}));
+    return { success: false, error: errData.detail || `Server error (${res.status})` };
+  } catch (err) {
+    console.warn('[API] sendWhatsAppBillBundleDirect error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Test approved WhatsApp Meta Template with attached PDF via Backend
+ */
+export async function testWhatsAppTemplateBackend(phone) {
+  try {
+    const res = await fetchWithTimeout(
+      `${activeBaseUrl}/api/v1/whatsapp/test-template`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      },
+      25000
+    );
+    if (res.ok) {
+      return await res.json();
+    }
+    const errData = await res.json().catch(() => ({}));
+    return { success: false, error: errData.detail || `Server error (${res.status})` };
+  } catch (err) {
+    console.warn('[API] testWhatsAppTemplateBackend error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 
 

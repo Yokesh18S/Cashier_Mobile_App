@@ -12,12 +12,19 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import {
+  sendWhatsAppBill,
+  openWhatsAppDirect,
+  getWhatsAppConfig,
+  formatBillReceiptText,
+} from '../services/whatsapp';
 
 export default function PaymentModal({
   visible,
   onClose,
   totalAmount,
   customerPhone,
+  cartItems = {},
   onConfirmPayment,
   onPaymentSuccess,
   isBackendConnected = false,
@@ -28,6 +35,8 @@ export default function PaymentModal({
   const [orderReceiptId, setOrderReceiptId] = useState('');
   const [backendOrderId, setBackendOrderId] = useState('');
   const [processingStatus, setProcessingStatus] = useState('Processing payment...');
+  const [whatsappStatus, setWhatsappStatus] = useState('idle'); // 'idle' | 'sending' | 'sent' | 'failed'
+  const [whatsappError, setWhatsappError] = useState('');
 
   useEffect(() => {
     if (visible) {
@@ -38,8 +47,73 @@ export default function PaymentModal({
       setOrderReceiptId(`POS-4402-${randomToken}`);
       setBackendOrderId('');
       setProcessingStatus('Processing payment...');
+      setWhatsappStatus('idle');
+      setWhatsappError('');
     }
   }, [visible, totalAmount]);
+
+  const dispatchWhatsAppBill = async (receiptId) => {
+    const cleanPhone = (customerPhone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) return;
+
+    setWhatsappStatus('sending');
+    const itemsList = Object.values(cartItems || {});
+    const billData = {
+      restaurantName: 'DATA UDIPI',
+      tableNumber: 'Takeaway',
+      customerName: 'Customer',
+      customerPhone: cleanPhone,
+      billNo: receiptId,
+      orderId: receiptId,
+      items: itemsList,
+      subtotal: totalAmount,
+      totalAmount: totalAmount,
+      paymentMethod: method,
+      date: new Date(),
+    };
+
+    try {
+      const config = await getWhatsAppConfig();
+      if (config.autoSend) {
+        const res = await sendWhatsAppBill(billData);
+        if (res.success) {
+          setWhatsappStatus('sent');
+        } else {
+          setWhatsappStatus('failed');
+          setWhatsappError(res.error || 'Failed to send WhatsApp message');
+        }
+      }
+    } catch (err) {
+      setWhatsappStatus('failed');
+      setWhatsappError(err.message);
+    }
+  };
+
+  const handleOpenWhatsAppDirect = async () => {
+    const cleanPhone = (customerPhone || '').replace(/\D/g, '');
+    if (!cleanPhone) return;
+    const itemsList = Object.values(cartItems || {});
+    const text = formatBillReceiptText({
+      restaurantName: 'DATA UDIPI',
+      tableNumber: 'Takeaway',
+      customerName: 'Customer',
+      customerPhone: cleanPhone,
+      billNo: backendOrderId || orderReceiptId,
+      orderId: backendOrderId || orderReceiptId,
+      items: itemsList,
+      subtotal: totalAmount,
+      totalAmount: totalAmount,
+      paymentMethod: method,
+      date: new Date(),
+    });
+
+    try {
+      await openWhatsAppDirect(cleanPhone, text);
+      setWhatsappStatus('sent');
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    }
+  };
 
   const numericTendered = parseFloat(tenderedAmount) || 0;
   const changeDue = Math.max(0, numericTendered - totalAmount);
@@ -62,6 +136,7 @@ export default function PaymentModal({
     setProcessingStatus('Sending order to kitchen backend...');
 
     try {
+      let finalId = orderReceiptId;
       if (onConfirmPayment) {
         const result = await onConfirmPayment({
           method,
@@ -72,14 +147,17 @@ export default function PaymentModal({
         });
 
         if (result && result.orderId) {
+          finalId = result.orderId;
           setBackendOrderId(result.orderId);
           setOrderReceiptId(result.orderId);
         }
       }
       setStep('success');
+      dispatchWhatsAppBill(finalId);
     } catch (err) {
       console.warn('Backend order placement error, falling back to local receipt:', err);
       setStep('success');
+      dispatchWhatsAppBill(orderReceiptId);
     }
   };
 
@@ -158,14 +236,36 @@ export default function PaymentModal({
                 )}
               </View>
 
-              <View style={styles.smsNotice}>
-                <Ionicons name="chatbubble-ellipses-outline" size={14} color={COLORS.accentGreen} />
-                <Text style={styles.smsNoticeText}>
-                  Digital e-receipt & KOT token sent to +91 {customerPhone}
-                </Text>
+              <View style={[styles.smsNotice, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0', borderWidth: 1 }]}>
+                <Ionicons name="logo-whatsapp" size={16} color="#15803D" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={[styles.smsNoticeText, { color: '#166534', fontWeight: '600' }]}>
+                    {whatsappStatus === 'sending'
+                      ? `Sending bill via WhatsApp to +91 ${customerPhone}...`
+                      : whatsappStatus === 'sent'
+                      ? `✅ Bill delivered to WhatsApp (+91 ${customerPhone})`
+                      : `WhatsApp bill ready for +91 ${customerPhone}`}
+                  </Text>
+                  {whatsappStatus === 'failed' && (
+                    <Text style={{ fontSize: 10, color: '#991B1B', marginTop: 2 }}>
+                      {whatsappError || 'Could not send automatically via Cloud API.'}
+                    </Text>
+                  )}
+                </View>
               </View>
 
               <View style={styles.successActionButtons}>
+                <TouchableOpacity
+                  style={[styles.printButton, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
+                  onPress={handleOpenWhatsAppDirect}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
+                  <Text style={[styles.printButtonText, { color: '#FFFFFF' }]}>
+                    {whatsappStatus === 'sent' ? 'Sent' : 'WhatsApp'}
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.printButton}
                   onPress={() => Alert.alert('Printing', `Printing thermal receipt for token ${orderReceiptId}`)}

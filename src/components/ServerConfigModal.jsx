@@ -26,6 +26,7 @@ export default function ServerConfigModal({
   isBackendConnected,
   activeRestaurant,
   onConfigUpdated,
+  onOpenWhatsAppConfig,
 }) {
   const [currentUrl, setCurrentUrl] = useState(getActiveBaseUrl());
   const [customUrl, setCustomUrl] = useState('');
@@ -152,6 +153,20 @@ export default function ServerConfigModal({
                 )}
               </TouchableOpacity>
             </View>
+
+            {onOpenWhatsAppConfig ? (
+              <TouchableOpacity
+                style={styles.waShortcutBtn}
+                onPress={() => {
+                  onClose();
+                  onOpenWhatsAppConfig();
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="logo-whatsapp" size={18} color="#15803D" style={{ marginRight: 8 }} />
+                <Text style={styles.waShortcutBtnText}>Configure WhatsApp Billing & API Token</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </View>
@@ -309,5 +324,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  waShortcutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 8,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  waShortcutBtnText: {
+    color: '#15803D',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

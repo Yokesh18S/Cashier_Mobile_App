@@ -11,6 +11,7 @@ export default function Header({
   backendUrl = '',
   onLogout,
   onPressStatus,
+  onPressWhatsApp,
 }) {
   const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
@@ -61,16 +62,29 @@ export default function Header({
           </View>
         </View>
 
-        {onLogout ? (
-          <TouchableOpacity 
-            style={styles.logoutButton} 
-            onPress={handleLogoutPress}
-            activeOpacity={0.7}
-            accessibilityLabel="Sign Out"
-          >
-            <Ionicons name="log-out-outline" size={19} color={COLORS.accentRed} />
-          </TouchableOpacity>
-        ) : null}
+        <View style={styles.headerRightActions}>
+          {onPressWhatsApp ? (
+            <TouchableOpacity 
+              style={styles.waHeaderButton} 
+              onPress={onPressWhatsApp}
+              activeOpacity={0.7}
+              accessibilityLabel="WhatsApp Billing Settings"
+            >
+              <Ionicons name="logo-whatsapp" size={19} color="#15803D" />
+            </TouchableOpacity>
+          ) : null}
+
+          {onLogout ? (
+            <TouchableOpacity 
+              style={styles.logoutButton} 
+              onPress={handleLogoutPress}
+              activeOpacity={0.7}
+              accessibilityLabel="Sign Out"
+            >
+              <Ionicons name="log-out-outline" size={19} color={COLORS.accentRed} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.metaRow}>
@@ -163,6 +177,21 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '700',
     color: COLORS.textMedium,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  waHeaderButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
   },
   logoutButton: {
     width: 36,
